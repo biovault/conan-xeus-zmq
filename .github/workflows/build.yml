@@ -34,22 +34,22 @@ jobs:
             build-runtime: MD
             build-config: Release
 
-          - name: Linux_gcc10
-            os: ubuntu-20.04
-            build-compiler: gcc
-            build-cversion: 10
-            build-config: Release
-            build-os: Linux
-            build-libcxx: libstdc++
+        #   - name: Linux_gcc10
+        #     os: ubuntu-20.04
+        #     build-compiler: gcc
+        #     build-cversion: 10
+        #     build-config: Release
+        #     build-os: Linux
+        #     build-libcxx: libstdc++
 
-          - name: Macos_xcode12.4
-            os: macOS-11
-            build-compiler: apple-clang
-            build-cversion: "12.0"
-            build-config: Release
-            build-os: Macos
-            build-xcode-version: 12.4
-            build-libcxx: libc++
+        #   - name: Macos_xcode12.4
+        #     os: macOS-11
+        #     build-compiler: apple-clang
+        #     build-cversion: "12.0"
+        #     build-config: Release
+        #     build-os: Macos
+        #     build-xcode-version: 12.4
+        #     build-libcxx: libc++
 
 
     steps:

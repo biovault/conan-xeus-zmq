@@ -3,7 +3,7 @@ from conan.tools.cmake import CMakeDeps, CMake, CMakeToolchain
 from conans.tools import SystemPackageTool
 from conan.errors import ConanException
 import os
-import shutil
+from shutil import copytree, ignore_patterns
 from pathlib import Path, PurePosixPath
 import subprocess
 
@@ -172,7 +172,7 @@ include_directories(
         self.cpp_info.set_property("cmake_config_file", True)
 
     def _pkg_bin(self, build_type):
-        src_dir = f"{self.build_folder}/lib/{build_type}"
+        src_dir = f"{self.build_folder}/{build_type}"
         dst_lib = f"lib/{build_type}"
         dst_bin = f"bin/{build_type}"
 
@@ -184,16 +184,21 @@ include_directories(
             self.settings.compiler == "Visual Studio"
         ):
             # the debug info
+            print("Adding pdb files for Windows debug")
             self.copy("*.pdb", src=src_dir, dst=dst_lib, keep_path=False)
 
     def package(self):
         # cleanup excess installs - this is a kludge TODO fix cmake
         print("cleanup")
+        print(f"Package folder: {self.package_folder}")
         for child in Path(self.package_folder, "lib").iterdir():
             if child.is_file():
                 child.unlink()
         print("end cleanup")
-        self.copy("*.h", src="xeus-zmq/src/cpp", dst="include", keep_path=True)
-        self.copy("*.hpp", src="xeus-zmq/src/cpp", dst="include", keep_path=True)
+        # The default sub folder created by conan in include is called "xeus-zmq"
+        # based on the package name. Usually this is correct but in this case other
+        # xeus packages assume that the folder is called "xeus".
+        print(f"Self copy status (FileCopier) {self.copy._src_folders} {self.copy._dst_folder}") 
+        copytree(Path(self.copy._src_folders[0], "xeus-zmq/include/xeus-zmq"), Path(self.copy._dst_folder, 'include/xeus'), ignore=ignore_patterns('*.cpp'))
 
         self._pkg_bin(self.settings.build_type)

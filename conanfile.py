@@ -1,6 +1,6 @@
 from conans import ConanFile, tools
 from conan.tools.cmake import CMakeDeps, CMake, CMakeToolchain
-from conans.tools import SystemPackageTool
+from conans.tools import SystemPackageTool, load, save
 from conan.errors import ConanException
 import os
 from shutil import copytree, ignore_patterns
@@ -20,8 +20,8 @@ class XeusZmqConan(ConanFile):
     of the xserver API from xeus, based on the ZeroMQ library."""
     topics = ("python", "jupyter", "zeromq", "zeus")
     settings = "os", "compiler", "build_type", "arch"
-    options = {"shared": [True, False], "testing": [True, False]}
-    default_options = {"shared": True, "testing": False}
+    options = {"shared": [True, False], "testing": [True, False], 'merge_package': [True, False]}
+    default_options = {"shared": True, "testing": False, 'merge_package': False}
     generators = "CMakeDeps"
     exports = "cmake/*"
     requires = (
@@ -31,6 +31,41 @@ class XeusZmqConan(ConanFile):
         "xeus/3.1.4@lkeb/stable"
     )
 
+    _merge_from = ["Debug", "RelWithDebInfo"]
+    _merge_to = "Release"
+
+    # export and _get_git_path work together to record and retrieve the original checkout directory
+    def __get_git_path(self):
+        path = load(
+            Path(Path(__file__).parent.resolve(), "__gitpath.txt")
+        )
+        print(f"git info from {path}")
+        return path
+    
+    def _save_package_id(self, build_type=None):
+        if build_type is None:
+            build_type = self.settings.build_type
+        package_id = self.info.package_id()
+        idfile = Path(self.__get_git_path(), f"{build_type}_id.txt")
+        with open(idfile, "w") as pidfile:
+            pidfile.write(f"{package_id}")
+
+    def _get_package_id(self, build_type):
+        idfile = Path(self.__get_git_path(), f"{build_type}_id.txt")
+        package_id = None
+        if idfile.exists():
+            with open(idfile, "r") as pidfile:
+                package_id = pidfile.read().rstrip()
+        return package_id
+
+    def export(self):
+        print("In export")
+        # save the original source path to the directory used to build the package
+        save(
+            Path(self.export_folder, "__gitpath.txt"),
+            str(Path(__file__).parent.resolve()),
+        )
+    
     def source(self):
         try:
             self.run(f"git clone {self.url}")
@@ -138,7 +173,6 @@ include_directories(
     def _configure_cmake(self):
         cmake = CMake(self)
         cmake.verbose = True
-        build_folder = os.path.join(self.build_folder, "xeus-zmq")
         print(f"Source folder {Path(self.source_folder).as_posix()}")
         try:
             cmake.configure(build_script_folder="xeus-zmq") #, cli_args=["--trace"])
@@ -148,17 +182,17 @@ include_directories(
         return cmake
 
     def build(self):
-        
+        self._save_package_id()
         # Build both release and debug for dual packaging
-        cmake_debug = self._configure_cmake()
+        cmake = self._configure_cmake()
         try:
-            cmake_debug.build(cli_args=["--verbose"])
+            cmake.build()
         except ConanException as e:
-            print(f"Exception: {e} from cmake invocation: \n Completing dbg build")
+            print(f"Exception: {e} from cmake invocation: \n Completing build")
         try:
-            cmake_debug.install()
+            cmake.install()
         except ConanException as e:
-            print(f"Exception: {e} from cmake invocation: \n Completing dbg install")
+            print(f"Exception: {e} from cmake invocation: \n Completing  install")
 
     # This is to make combined packages - for this wer make separate Debug and Release
     #def package_id(self):
@@ -202,3 +236,21 @@ include_directories(
         copytree(Path(self.copy._src_folders[0], "xeus-zmq/include/xeus-zmq"), Path(self.copy._dst_folder, 'include/xeus'), ignore=ignore_patterns('*.cpp'))
 
         self._pkg_bin(self.settings.build_type)
+
+        # This allow the merging op multiple build_types into a single package
+        if self.options.merge_package:
+            # Merge any other available packages into the merge target package
+            target_id = self._get_package_id(self._merge_to)
+            merge_target_dir = Path(self.package_folder, "..", target_id).resolve()
+            for build_type in self._merge_from:
+                source_id = self._get_package_id(build_type)
+                if source_id is not None:
+                    print(f"Merging package {build_type} into {self._merge_to}")
+                    merge_source_dir = Path(self.package_folder, "..", source_id).resolve()
+                    if merge_source_dir.exists():
+                        copytree(merge_source_dir, merge_target_dir, dirs_exist_ok=True)
+
+
+        
+
+

@@ -77,11 +77,12 @@ runs:
         CONAN_LKEB_ARTIFACTORY: lkeb-artifactory
 
 
-    - name: Build Release
+    - name: Build Release and Debug and Merge to Release package
       run: |
         $env:CONAN_USER_HOME = (Get-Location).tostring() + '\_conan'
         conan profile list
         conan create . xeus-zmq/1.1.1@lkeb/stable -pr:h action_build -pr:b action_build
+        conan create . xeus-zmq/1.1.1@lkeb/stable -pr:h action_build -pr:b action_build -s build_type=Debug -o merge_package=True
 
       shell: pwsh
       env:
@@ -98,25 +99,3 @@ runs:
       env:
         CONAN_LKEB_ARTIFACTORY: lkeb-artifactory
 
-    - name: Build Debug
-      run: |
-        $env:CONAN_USER_HOME = (Get-Location).tostring() + '\_conan'
-        conan profile list
-        conan profile update settings.build_type=Debug action_build
-        conan create . xeus-zmq/1.1.1@lkeb/stable -pr:h action_build -pr:b action_build
-
-      shell: pwsh
-      env:
-        CONAN_LKEB_ARTIFACTORY: lkeb-artifactory
-
-    - name: Build + Upload Debug to artifactory with conan
-      run: |
-        $env:CONAN_USER_HOME = (Get-Location).tostring() + '\_conan'
-        $package_name = (conan inspect --raw name conanfile.py)
-        $package_ref = $package_name + '/*'
-        echo "Uploading $package_ref  to the Artifactory"
-        conan upload --all --force --confirm -r $Env:CONAN_LKEB_ARTIFACTORY $package_ref
-
-      shell: pwsh
-      env:
-        CONAN_LKEB_ARTIFACTORY: lkeb-artifactory

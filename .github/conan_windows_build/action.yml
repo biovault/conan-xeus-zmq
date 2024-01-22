@@ -91,11 +91,9 @@ runs:
     - name: Upload Release
       run: |
         $env:CONAN_USER_HOME = (Get-Location).tostring() + '\_conan'
-        $package_name = (conan inspect --raw name conanfile.py)
-        $package_ref = $package_name + '/*'
         echo "Uploading $package_ref  to the Artifactory"
         $release_pkgid = Get-Content '.\Release_id.txt'
-        $release_pkgid = $package_ref + ":" + $release_pkgid
+        $release_pkgid = "xeus-zmq/1.1@lkeb/stable:" + $release_pkgid
         conan upload --all --force --confirm -r $Env:CONAN_LKEB_ARTIFACTORY $release_pkgid
       shell: pwsh
       env:

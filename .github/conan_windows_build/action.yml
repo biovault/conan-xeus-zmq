@@ -95,7 +95,7 @@ runs:
         $package_ref = $package_name + '/*'
         echo "Uploading $package_ref  to the Artifactory"
         $release_pkgid = Get-Content '.\Release_id.txt'
-        $release_pkgid = $package_ref + ":" + release_pkgid
+        $release_pkgid = $package_ref + ":" + $release_pkgid
         conan upload --all --force --confirm -r $Env:CONAN_LKEB_ARTIFACTORY $release_pkgid
       shell: pwsh
       env:

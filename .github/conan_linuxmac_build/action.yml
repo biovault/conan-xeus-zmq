@@ -102,7 +102,9 @@ runs:
         export CONAN_USER_HOME=`pwd`/_conan
         export CONAN_SKIP_BROKEN_SYMLINKS_CHECK=1
         export CONAN_PACKAGE_NAME=`conan inspect --raw name conanfile.py`
-        conan upload --all --force --confirm -r $CONAN_LKEB_ARTIFACTORY $CONAN_PACKAGE_NAME/*
+        release_pkgid=`cat ./Release_id.txt`
+        release_pkgid="xeus-zmq/1.1.1@lkeb/stable:${release_pkgid}"
+        conan upload --all --force --confirm -r $CONAN_LKEB_ARTIFACTORY $release_pkgid
       shell: bash
       env:
         CONAN_LKEB_ARTIFACTORY: lkeb-artifactory

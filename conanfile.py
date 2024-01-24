@@ -11,6 +11,9 @@ required_conan_version = ">=1.60.0"
 
 
 class XeusZmqConan(ConanFile):
+    python_requires = "bundleutils/0.1@lkeb/stable"
+    python_requires_extend = "bundleutils.BundleUtils"
+
     name = "xeus-zmq"
     version = "1.1.1"
     license = "MIT"
@@ -30,42 +33,12 @@ class XeusZmqConan(ConanFile):
         "zeromq/4.3.5",
         "xeus/3.1.4@lkeb/stable"
     )
+   
+    def init(self):
+        # use the buntilutils to record the 
+        # original source directory
+        self._save_git_path()
 
-    _merge_from = ["Debug", "RelWithDebInfo"]
-    _merge_to = "Release"
-
-    # export and _get_git_path work together to record and retrieve the original checkout directory
-    def __get_git_path(self):
-        path = load(
-            Path(Path(__file__).parent.resolve(), "__gitpath.txt")
-        )
-        print(f"git info from {path}")
-        return path
-    
-    def _save_package_id(self, build_type=None):
-        if build_type is None:
-            build_type = self.settings.build_type
-        package_id = self.info.package_id()
-        idfile = Path(self.__get_git_path(), f"{build_type}_id.txt")
-        with open(idfile, "w") as pidfile:
-            pidfile.write(f"{package_id}")
-
-    def _get_package_id(self, build_type):
-        idfile = Path(self.__get_git_path(), f"{build_type}_id.txt")
-        package_id = None
-        if idfile.exists():
-            with open(idfile, "r") as pidfile:
-                package_id = pidfile.read().rstrip()
-        return package_id
-
-    def export(self):
-        print("In export")
-        # save the original source path to the directory used to build the package
-        save(
-            Path(self.export_folder, "__gitpath.txt"),
-            str(Path(__file__).parent.resolve()),
-        )
-    
     def source(self):
         try:
             self.run(f"git clone {self.url}")
@@ -238,17 +211,8 @@ include_directories(
         self._pkg_bin(self.settings.build_type)
 
         # This allow the merging op multiple build_types into a single package
-        if self.options.merge_package:
-            # Merge any other available packages into the merge target package
-            target_id = self._get_package_id(self._merge_to)
-            merge_target_dir = Path(self.package_folder, "..", target_id).resolve()
-            for build_type in self._merge_from:
-                source_id = self._get_package_id(build_type)
-                if source_id is not None:
-                    print(f"Merging package {build_type} into {self._merge_to}")
-                    merge_source_dir = Path(self.package_folder, "..", source_id).resolve()
-                    if merge_source_dir.exists():
-                        copytree(merge_source_dir, merge_target_dir, dirs_exist_ok=True)
+        self._merge_packages()
+
 
 
         

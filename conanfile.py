@@ -129,6 +129,7 @@ add_custom_command(TARGET xeus-zmq-static POST_BUILD
         tc.variables["BUILD_TESTING"] = "ON" if self.options.testing else "OFF"
         tc.variables["BUILD_SHARED_LIBS"] = "ON" if self.options.shared else "OFF"
         tc.variables["CMAKE_PREFIX_PATH"] = Path(self.build_folder).as_posix()
+        tc.variables["WITH_PERF_TOOL"] = "OFF"
 
         if self.settings.os == "Linux":
             tc.variables["CMAKE_CONFIGURATION_TYPES"] = "Debug;Release;RelWithDebInfo"

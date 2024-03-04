@@ -257,6 +257,8 @@ include_directories(
         self._pkg_bin(self.settings.build_type)
 
         # This allows the merging op multiple build_types into a single package
+        self._merge_from = ["Debug"]
+        self._merge_to = "Release"         
         self._merge_packages()
 
         # If we are in package merge also merge the libsodium and zeromq dependencies

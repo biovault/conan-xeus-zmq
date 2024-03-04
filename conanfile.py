@@ -3,7 +3,7 @@ from conan.tools.cmake import CMakeDeps, CMake, CMakeToolchain
 from conans.tools import SystemPackageTool, load, save
 from conan.errors import ConanException
 import os
-from shutil import copytree, ignore_patterns
+from shutil import copytree, ignore_patterns, copy
 from pathlib import Path, PurePosixPath
 import subprocess
 
@@ -19,6 +19,11 @@ class XeusZmqConan(ConanFile):
     license = "MIT"
     author = "B. van Lew b.van_lew@lumc.nl"
     url = "https://github.com/jupyter-xeus/xeus-zmq.git"
+    zmqurl = "https://github.com/zeromq/libzmq.git"
+    zmqversion = "v4.3.5"
+    cppzmqurl = "https://github.com/zeromq/cppzmq.git"
+    cppzmqversion = "v4.10.0"
+
     description = """xeus-zmq provides various implementations
     of the xserver API from xeus, based on the ZeroMQ library."""
     topics = ("python", "jupyter", "zeromq", "zeus")
@@ -27,11 +32,12 @@ class XeusZmqConan(ConanFile):
     default_options = {"shared": True, "testing": False, 'merge_package': False}
     generators = "CMakeDeps"
     exports = "cmake/*"
+    exports_sources = "Findlibsodium.cmake", "Findzeromq.cmake"
     requires = (
-        "nlohmann_json/3.11.3",
-        "cppzmq/4.10.0",
-        "zeromq/4.3.5",
-        "xeus/3.1.4@lkeb/stable"
+        "nlohmann_json/3.11.3", # header only
+    #    "cppzmq/4.10.0", # header only but depends on binary dep zeromq
+    #    "zeromq/4.3.5@lkeb/stable", # The biovault multi-config conan-zeromq with cmake config 
+        "xeus/3.1.4@lkeb/stable" # The biovault multi-config xeus with cmake config 
     )
    
     def init(self):
@@ -49,6 +55,22 @@ class XeusZmqConan(ConanFile):
             self.run(f"git checkout tags/{self.version}")
         except ConanException as e:
             print(e)
+
+        # Add the dependency cppzmq as a subdirectory
+        self.run(f"git clone {self.zmqurl}")
+        os.chdir("./libzmq")
+        self.run(f"git checkout tags/{self.zmqversion}")
+        os.chdir('..')
+
+        self.run(f"git clone {self.cppzmqurl}")
+        os.chdir("./cppzmq")
+        self.run(f"git checkout tags/{self.cppzmqversion}")
+        os.chdir('..')
+
+        subdirs = """
+add_subdirectory(libzmq)
+add_subdirectory(cppzmq)
+"""
         ## for CMP0091 policy set xeus CMake version to 3.15
         xeuszmqcmake = os.path.join(self.source_folder, "xeus-zmq", "CMakeLists.txt")
         tools.replace_in_file(xeuszmqcmake, "cmake_minimum_required(VERSION 3.8)", "cmake_minimum_required(VERSION 3.15)")
@@ -57,7 +79,30 @@ class XeusZmqConan(ConanFile):
         #tools.replace_in_file(os.path.join(self.source_folder, "xeus-zmq", "CMakeLists.txt"), "set(XEUS_TARGET_NAME xeus)", "set(XEUS_TARGET_NAME xeus::xeus)")
         tools.replace_in_file(xeuszmqcmake, "find_package(xeus ${xeus_REQUIRED_VERSION} REQUIRED)", "find_package(xeus ${xeus_REQUIRED_VERSION} REQUIRED)\n message(\"xeus found ${xeus_FOUND} - inc ${xeus_INCLUDE_DIRS} libs ${xeus_LIBRARY} & ${xeus_STATIC_LIBRARY} \")")
         tools.replace_in_file(xeuszmqcmake, "find_package(cppzmq ${cppzmq_REQUIRED_VERSION} REQUIRED)", "find_package(cppzmq ${cppzmq_REQUIRED_VERSION} REQUIRED) \n message(\"cppzmq found ${cppzmq_FOUND} - inc ${cppzmq_INCLUDE_DIRS} libs ${cppzmq_LIBRARY} & ${cppzmq_STATIC_LIBRARY} \")")
-        tools.replace_in_file(xeuszmqcmake, "\"${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}\" CACHE STRING \"install path for xeus-zmqConfig.cmake\")", "\"lib/cmake/${PROJECT_NAME}\" CACHE STRING \"install path for xeus-zmqConfig.cmake\")")
+        # Fix XEUS_ZMQ_CMAKECONFIG_INSTALL_DIR
+        tools.replace_in_file(xeuszmqcmake, "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}", "lib/cmake/${PROJECT_NAME}")
+        # Match the versions in the CMake with our versions (there are no major changes)
+        tools.replace_in_file(xeuszmqcmake, "set(xeus_REQUIRED_VERSION 3.1.1)", "set(xeus_REQUIRED_VERSION 3.1.4)")
+        tools.replace_in_file(xeuszmqcmake, "set(zeromq_REQUIRED_VERSION 4.3.2)", "set(zeromq_REQUIRED_VERSION 4.3.5)")
+        tools.replace_in_file(xeuszmqcmake, "set(zeromq_REQUIRED_VERSION 4.3.5)", f"set(zeromq_REQUIRED_VERSION 4.3.5)\n{subdirs}"
+
+                              )
+        # Link zeromq using libzmq as in out dependency 
+        tools.replace_in_file(xeuszmqcmake, "PUBLIC ${CPPZMQ_TARGET_NAME}", "PUBLIC libzmq\n        PUBLIC ${CPPZMQ_TARGET_NAME}")
+        install_text = """
+add_dependencies(xeus-zmq-static xeus-zmq)
+
+add_custom_command(TARGET xeus-zmq-static POST_BUILD
+    COMMAND "${CMAKE_COMMAND}"
+    --install ${CMAKE_CURRENT_BINARY_DIR}
+    --config $<CONFIG>
+    --prefix ${CMAKE_CURRENT_BINARY_DIR}/install/$<CONFIG>
+)
+
+"""
+        with open(xeuszmqcmake, "a") as cmakefile:
+            cmakefile.write(install_text)
+
         os.chdir("..")
 
     def _get_tc(self):
@@ -98,11 +143,12 @@ class XeusZmqConan(ConanFile):
         xeuspath = Path(self.deps_cpp_info["xeus"].rootpath).as_posix()
         tc.variables["xeus_ROOT"] = xeuspath
         print(f"********xeus_root: {xeuspath}**********")
-        zeromqpath = Path(self.deps_cpp_info["zeromq"].rootpath).as_posix()
-        print(f"********zeromq_path: {zeromqpath}**********")
-        tc.variables["zeromq_ROOT"] = zeromqpath
-        cppzmqpath = Path(Path(self.deps_cpp_info["cppzmq"].rootpath), 'lib', 'cmake').as_posix()
-        tc.variables["cppzmq_ROOT"] = cppzmqpath
+        # zeromqpath = Path(self.deps_cpp_info["zeromq"].rootpath).as_posix()
+        # print(f"********zeromq_path: {zeromqpath}**********")
+        # tc.variables["zeromq_ROOT"] = zeromqpath
+        # cppzmqpath = Path(Path(self.deps_cpp_info["cppzmq"].rootpath), 'lib', 'cmake').as_posix()
+        # print(f"********cppzmqpath: {cppzmqpath}**********")
+        # tc.variables["cppzmq_ROOT"] = cppzmqpath
         return tc
     
     def configure(self):
@@ -130,13 +176,13 @@ class XeusZmqConan(ConanFile):
         tc = self._get_tc()
         tc.generate()
 
+        #     {Path(self.deps_cpp_info['cppzmq'].rootpath, 'include').as_posix()}
+        #     {Path(self.deps_cpp_info['zeromq'].rootpath, 'include').as_posix()}
         with open("conan_toolchain.cmake", "a") as toolchain:
             toolchain.write(
                 fr"""
 include_directories(
     {Path(self.deps_cpp_info['nlohmann_json'].rootpath, 'include').as_posix()}
-    {Path(self.deps_cpp_info['cppzmq'].rootpath, 'include').as_posix()}
-    {Path(self.deps_cpp_info['zeromq'].rootpath, 'include').as_posix()}
     {Path(self.deps_cpp_info['xeus'].rootpath, 'include').as_posix()}
     {Path(self.deps_cpp_info['xtl'].rootpath, 'include').as_posix()}
 )
@@ -158,14 +204,14 @@ include_directories(
         self._save_package_id()
         # Build both release and debug for dual packaging
         cmake = self._configure_cmake()
-        try:
-            cmake.build()
-        except ConanException as e:
-            print(f"Exception: {e} from cmake invocation: \n Completing build")
-        try:
-            cmake.install()
-        except ConanException as e:
-            print(f"Exception: {e} from cmake invocation: \n Completing  install")
+
+        cmake.build(build_type="Debug")
+        cmake.install(build_type="Debug")
+
+        cmake = self._configure_cmake()
+
+        cmake.build(build_type="Release")
+        cmake.install(build_type="Release")
 
     # This is to make combined packages - for this wer make separate Debug and Release
     #def package_id(self):
@@ -210,8 +256,23 @@ include_directories(
 
         self._pkg_bin(self.settings.build_type)
 
-        # This allow the merging op multiple build_types into a single package
+        # This allows the merging op multiple build_types into a single package
         self._merge_packages()
+
+        # If we are in package merge also merge the libsodium and zeromq dependencies
+        if self.options.merge_package:
+            # zeromq dep
+            zeromqpath = Path(self.deps_cpp_info["zeromq"].rootpath).as_posix()
+            dst_zeromq = f"deps/zeromq"
+            self.copy("*.*", src=zeromqpath, dst=dst_zeromq, keep_path=True)
+            # libsodium dep
+            libsodpath = Path(self.deps_cpp_info["libsodium"].rootpath).as_posix()
+            dst_libsod = f"deps/libsodium"
+            self.copy("*.*", src=libsodpath, dst=dst_libsod, keep_path=True)
+            # Package the dependency finders
+            self.copy("Findzeromq.cmake", Path(self.copy._dst_folder, 'deps') )
+            self.copy("Findlibsodium.cmake", Path(self.copy._dst_folder, 'deps') )
+
 
 
 

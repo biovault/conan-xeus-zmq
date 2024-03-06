@@ -4,7 +4,7 @@ from conan.tools import files
 from conans.tools import SystemPackageTool, load, save
 from conan.errors import ConanException
 import os
-from shutil import copytree, ignore_patterns, copy
+from shutil import copytree, ignore_patterns, copytree, move, rmtree
 from pathlib import Path, PurePosixPath
 import subprocess
 
@@ -124,7 +124,8 @@ add_dependencies(xeus-zmq-static xeus-zmq cppzmq libzmq)
         tc.variables["BUILD_TESTING"] = "ON" if self.options.testing else "OFF"
         tc.variables["BUILD_SHARED_LIBS"] = "ON" if self.options.shared else "OFF"
         tc.variables["CMAKE_PREFIX_PATH"] = Path(self.build_folder).as_posix()
-        tc.variables["WITH_PERF_TOOL"] = "OFF"
+        tc.variables["WITH_PERF_TOOL"] = "OFF" # zmq
+        tc.variables["BUILD_TESTS"] = "OFF" #zmq
 
         if self.settings.os == "Linux":
             tc.variables["CMAKE_CONFIGURATION_TYPES"] = "Debug;Release"
@@ -139,24 +140,11 @@ add_dependencies(xeus-zmq-static xeus-zmq cppzmq libzmq)
         xeuspath = Path(self.deps_cpp_info["xeus"].rootpath).as_posix()
         tc.variables["xeus_ROOT"] = xeuspath
         print(f"********xeus_root: {xeuspath}**********")
-        # zeromqpath = Path(self.deps_cpp_info["zeromq"].rootpath).as_posix()
-        # print(f"********zeromq_path: {zeromqpath}**********")
-        # tc.variables["zeromq_ROOT"] = zeromqpath
-        # cppzmqpath = Path(Path(self.deps_cpp_info["cppzmq"].rootpath), 'lib', 'cmake').as_posix()
-        # print(f"********cppzmqpath: {cppzmqpath}**********")
-        # tc.variables["cppzmq_ROOT"] = cppzmqpath
         return tc
     
     def configure(self):
         # Force the zmq to use the shared lib
         self.options["zeromq"].shared = True
-
-    def layout(self):
-        pass
-        # Cause the libs and bin to be output to separate subdirs
-        # based on build configuration.
-        #  self.cpp.package.libdirs = ["lib"]
-        # self.cpp.package.bindirs = ["bin"]
 
     def system_requirements(self):
         if self.settings.os == "Macos":
@@ -201,10 +189,6 @@ include_directories(
         self._save_package_id()
         # Build both release and debug for dual packaging
         cmake = self._configure_cmake()
-#     --install ${CMAKE_CURRENT_BINARY_DIR}
-#     --config $<CONFIG>
-#     --prefix ${CMAKE_CURRENT_BINARY_DIR}/install/$<CONFIG>
-#     --verbose
         # conan cmake.install sts the package directory as the install prefix 
         # and uses the build_type as source
         cmake.build(build_type="Debug")
@@ -220,19 +204,19 @@ include_directories(
         self.cpp_info.set_property("skip_deps_file", True)
         self.cpp_info.set_property("cmake_config_file", True)
 
-    def _pkg_bin(self, src_dir, dst_root, build_type):
+    def _pkg_bin(self, src_dir, dst_root, build_type, prefix):
         print(f"packaging source {src_dir} for {build_type}")
         dst_lib = Path(dst_root, f"lib/{build_type}")
         dst_bin = Path(dst_root, f"bin/{build_type}")
 
         print("Package dll (if any)")
-        files.copy(self, "*.dll", src=src_dir, dst=dst_bin, keep_path=False)
+        files.copy(self, f"{prefix}*.dll", src=src_dir, dst=dst_bin, keep_path=False)
         print("Package so versions (if any)")
-        files.copy(self, "*.so.*", src=src_dir, dst=dst_lib, keep_path=False)
+        files.copy(self, f"{prefix}*.so.*", src=src_dir, dst=dst_lib, keep_path=False)
         print("Package so (if any)")
-        files.copy(self, "*.so", src=src_dir, dst=dst_lib, keep_path=False)
+        files.copy(self, f"{prefix}*.so", src=src_dir, dst=dst_lib, keep_path=False)
         print("Package dylib (if any)")
-        files.copy(self, "*.dylib", src=src_dir, dst=dst_lib, keep_path=False)
+        files.copy(self, f"{prefix}*.dylib", src=src_dir, dst=dst_lib, keep_path=False)
         print("Package a (archive) (if any)")
         files.copy(self, "*.a", src=src_dir, dst=dst_lib, keep_path=False)
         if ((build_type == "Debug") or (build_type == "RelWithDebInfo")) and (
@@ -240,7 +224,7 @@ include_directories(
         ):
             # the debug info
             print("Adding pdb files for Windows debug")
-            files.copy(self, "*.pdb", src=src_dir, dst=dst_lib, keep_path=False)
+            files.copy(self, f"{prefix}*.pdb", src=src_dir, dst=dst_bin, keep_path=False)
 
 
     def package(self):
@@ -252,11 +236,20 @@ include_directories(
         copytree(Path(self.copy._src_folders[0], "xeus-zmq/include/xeus-zmq"), Path(self.copy._dst_folder, 'include/xeus'), ignore=ignore_patterns('*.cpp'))
 
         print("packaging zmq Debug")
-        self._pkg_bin(f"{self.build_folder}/libzmq/lib/Debug", self.package_folder, "Debug")
+        self._pkg_bin(f"{self.build_folder}/libzmq/lib/Debug", self.package_folder, "Debug", "libzmq")
         print("packaging zmq Release")
-        self._pkg_bin(f"{self.build_folder}/libzmq/lib/Release", self.package_folder, "Release")
+        self._pkg_bin(f"{self.build_folder}/libzmq/lib/Release", self.package_folder, "Release", "libzmq")
+        if self.settings.os == "Windows":
+            print("packaging zmq Debug")
+            self._pkg_bin(f"{self.build_folder}/libzmq/bin/Debug", self.package_folder, "Debug", "libzmq")
+            print("packaging zmq Release")
+            self._pkg_bin(f"{self.build_folder}/libzmq/bin/Release", self.package_folder, "Release", "libzmq")
         # Cleanup unclassified libzmq artifacts
         files.rm(self, "libzmq*", Path(self.package_folder, 'lib') )
+
+        # Move zmq CMake
+        copytree(Path(self.package_folder, "CMake"), Path(self.package_folder, "lib", "cmake", "libzmq"))
+        rmtree(Path(self.package_folder, "CMake"))
 
 
 

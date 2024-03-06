@@ -1,5 +1,6 @@
 from conans import ConanFile, tools
 from conan.tools.cmake import CMakeDeps, CMake, CMakeToolchain
+from conan.tools import files
 from conans.tools import SystemPackageTool, load, save
 from conan.errors import ConanException
 import os
@@ -84,24 +85,18 @@ add_subdirectory(cppzmq)
         # Match the versions in the CMake with our versions (there are no major changes)
         tools.replace_in_file(xeuszmqcmake, "set(xeus_REQUIRED_VERSION 3.1.1)", "set(xeus_REQUIRED_VERSION 3.1.4)")
         tools.replace_in_file(xeuszmqcmake, "set(zeromq_REQUIRED_VERSION 4.3.2)", "set(zeromq_REQUIRED_VERSION 4.3.5)")
-        tools.replace_in_file(xeuszmqcmake, "set(zeromq_REQUIRED_VERSION 4.3.5)", f"set(zeromq_REQUIRED_VERSION 4.3.5)\n{subdirs}"
-
-                              )
+        tools.replace_in_file(xeuszmqcmake, "set(zeromq_REQUIRED_VERSION 4.3.5)", f"set(zeromq_REQUIRED_VERSION 4.3.5)\n{subdirs}")
+        # Separate binary targets by CONFIG subdir
+        tools.replace_in_file(xeuszmqcmake, "ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}", "ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/$<CONFIG>")
+        tools.replace_in_file(xeuszmqcmake, "LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}", "LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/$<CONFIG>")
+        tools.replace_in_file(xeuszmqcmake, "RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}", "RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/$<CONFIG>")
         # Link zeromq using libzmq as in out dependency 
         tools.replace_in_file(xeuszmqcmake, "PUBLIC ${CPPZMQ_TARGET_NAME}", "PUBLIC libzmq\n        PUBLIC ${CPPZMQ_TARGET_NAME}")
-        install_text = """
-add_dependencies(xeus-zmq-static xeus-zmq)
-
-add_custom_command(TARGET xeus-zmq-static POST_BUILD
-    COMMAND "${CMAKE_COMMAND}"
-    --install ${CMAKE_CURRENT_BINARY_DIR}
-    --config $<CONFIG>
-    --prefix ${CMAKE_CURRENT_BINARY_DIR}/install/$<CONFIG>
-)
-
+        dep_text = """
+add_dependencies(xeus-zmq-static xeus-zmq cppzmq libzmq)
 """
         with open(xeuszmqcmake, "a") as cmakefile:
-            cmakefile.write(install_text)
+            cmakefile.write(dep_text)
 
         os.chdir("..")
 
@@ -132,7 +127,7 @@ add_custom_command(TARGET xeus-zmq-static POST_BUILD
         tc.variables["WITH_PERF_TOOL"] = "OFF"
 
         if self.settings.os == "Linux":
-            tc.variables["CMAKE_CONFIGURATION_TYPES"] = "Debug;Release;RelWithDebInfo"
+            tc.variables["CMAKE_CONFIGURATION_TYPES"] = "Debug;Release"
 
         if self.settings.os == "Macos":
             proc = subprocess.run(
@@ -157,10 +152,11 @@ add_custom_command(TARGET xeus-zmq-static POST_BUILD
         self.options["zeromq"].shared = True
 
     def layout(self):
+        pass
         # Cause the libs and bin to be output to separate subdirs
         # based on build configuration.
-        self.cpp.package.libdirs = ["lib/$<CONFIG>"]
-        self.cpp.package.bindirs = ["bin/$<CONFIG>"]
+        #  self.cpp.package.libdirs = ["lib"]
+        # self.cpp.package.bindirs = ["bin"]
 
     def system_requirements(self):
         if self.settings.os == "Macos":
@@ -205,7 +201,12 @@ include_directories(
         self._save_package_id()
         # Build both release and debug for dual packaging
         cmake = self._configure_cmake()
-
+#     --install ${CMAKE_CURRENT_BINARY_DIR}
+#     --config $<CONFIG>
+#     --prefix ${CMAKE_CURRENT_BINARY_DIR}/install/$<CONFIG>
+#     --verbose
+        # conan cmake.install sts the package directory as the install prefix 
+        # and uses the build_type as source
         cmake.build(build_type="Debug")
         cmake.install(build_type="Debug")
 
@@ -214,67 +215,49 @@ include_directories(
         cmake.build(build_type="Release")
         cmake.install(build_type="Release")
 
-    # This is to make combined packages - for this wer make separate Debug and Release
-    #def package_id(self):
-    #    del self.info.settings.build_type
-    #    if self.settings.compiler == "Visual Studio":
-    #        del self.info.settings.compiler.runtime
-
     # Package contains its own cmake config file
     def package_info(self):
         self.cpp_info.set_property("skip_deps_file", True)
         self.cpp_info.set_property("cmake_config_file", True)
 
-    def _pkg_bin(self, build_type):
-        src_dir = f"{self.build_folder}/{build_type}"
-        dst_lib = f"lib/{build_type}"
-        dst_bin = f"bin/{build_type}"
+    def _pkg_bin(self, src_dir, dst_root, build_type):
+        print(f"packaging source {src_dir} for {build_type}")
+        dst_lib = Path(dst_root, f"lib/{build_type}")
+        dst_bin = Path(dst_root, f"bin/{build_type}")
 
-        self.copy("*.dll", src=src_dir, dst=dst_bin, keep_path=False)
-        self.copy("*.so", src=src_dir, dst=dst_lib, keep_path=False)
-        self.copy("*.dylib", src=src_dir, dst=dst_lib, keep_path=False)
-        self.copy("*.a", src=src_dir, dst=dst_lib, keep_path=False)
+        print("Package dll (if any)")
+        files.copy(self, "*.dll", src=src_dir, dst=dst_bin, keep_path=False)
+        print("Package so versions (if any)")
+        files.copy(self, "*.so.*", src=src_dir, dst=dst_lib, keep_path=False)
+        print("Package so (if any)")
+        files.copy(self, "*.so", src=src_dir, dst=dst_lib, keep_path=False)
+        print("Package dylib (if any)")
+        files.copy(self, "*.dylib", src=src_dir, dst=dst_lib, keep_path=False)
+        print("Package a (archive) (if any)")
+        files.copy(self, "*.a", src=src_dir, dst=dst_lib, keep_path=False)
         if ((build_type == "Debug") or (build_type == "RelWithDebInfo")) and (
             self.settings.compiler == "Visual Studio"
         ):
             # the debug info
             print("Adding pdb files for Windows debug")
-            self.copy("*.pdb", src=src_dir, dst=dst_lib, keep_path=False)
+            files.copy(self, "*.pdb", src=src_dir, dst=dst_lib, keep_path=False)
+
 
     def package(self):
-        # cleanup excess installs - this is a kludge TODO fix cmake
-        print("cleanup")
         print(f"Package folder: {self.package_folder}")
-        for child in Path(self.package_folder, "lib").iterdir():
-            if child.is_file():
-                child.unlink()
-        print("end cleanup")
         # The default sub folder created by conan in include is called "xeus-zmq"
         # based on the package name. Usually this is correct but in this case other
         # xeus packages assume that the folder is called "xeus".
         print(f"Self copy status (FileCopier) {self.copy._src_folders} {self.copy._dst_folder}") 
         copytree(Path(self.copy._src_folders[0], "xeus-zmq/include/xeus-zmq"), Path(self.copy._dst_folder, 'include/xeus'), ignore=ignore_patterns('*.cpp'))
 
-        self._pkg_bin(self.settings.build_type)
+        print("packaging zmq Debug")
+        self._pkg_bin(f"{self.build_folder}/libzmq/lib/Debug", self.package_folder, "Debug")
+        print("packaging zmq Release")
+        self._pkg_bin(f"{self.build_folder}/libzmq/lib/Release", self.package_folder, "Release")
+        # Cleanup unclassified libzmq artifacts
+        files.rm(self, "libzmq*", Path(self.package_folder, 'lib') )
 
-        # This allows the merging op multiple build_types into a single package
-        self._merge_from = ["Debug"]
-        self._merge_to = "Release"         
-        self._merge_packages()
-
-        # If we are in package merge also merge the libsodium and zeromq dependencies
-        if self.options.merge_package:
-            # zeromq dep
-            zeromqpath = Path(self.deps_cpp_info["zeromq"].rootpath).as_posix()
-            dst_zeromq = f"deps/zeromq"
-            self.copy("*.*", src=zeromqpath, dst=dst_zeromq, keep_path=True)
-            # libsodium dep
-            libsodpath = Path(self.deps_cpp_info["libsodium"].rootpath).as_posix()
-            dst_libsod = f"deps/libsodium"
-            self.copy("*.*", src=libsodpath, dst=dst_libsod, keep_path=True)
-            # Package the dependency finders
-            self.copy("Findzeromq.cmake", Path(self.copy._dst_folder, 'deps') )
-            self.copy("Findlibsodium.cmake", Path(self.copy._dst_folder, 'deps') )
 
 
 

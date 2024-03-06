@@ -252,9 +252,10 @@ include_directories(
         # # Cleanup unclassified libzmq artifacts
         # files.rm(self, "libzmq*", Path(self.package_folder, 'lib') )
 
-        # # Move zmq CMake
-        # copytree(Path(self.package_folder, "CMake"), Path(self.package_folder, "lib", "cmake", "libzmq"))
-        # rmtree(Path(self.package_folder, "CMake"))
+        # Move zmq CMake
+        if self.settings.os == "Windows":
+            copytree(Path(self.package_folder, "CMake"), Path(self.package_folder, "lib", "cmake", "libzmq"))
+            rmtree(Path(self.package_folder, "CMake"))
 
 
 

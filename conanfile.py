@@ -253,9 +253,9 @@ include_directories(
         # files.rm(self, "libzmq*", Path(self.package_folder, 'lib') )
 
         # Move zmq CMake
-        if self.settings.os == "Windows":
-            copytree(Path(self.package_folder, "CMake"), Path(self.package_folder, "lib", "cmake", "libzmq"))
-            rmtree(Path(self.package_folder, "CMake"))
+        # if self.settings.os == "Windows":
+        #     copytree(Path(self.package_folder, "CMake"), Path(self.package_folder, "lib", "cmake", "libzmq"))
+        #     rmtree(Path(self.package_folder, "CMake"))
 
 
 

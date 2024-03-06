@@ -98,6 +98,11 @@ add_dependencies(xeus-zmq-static xeus-zmq cppzmq libzmq)
         with open(xeuszmqcmake, "a") as cmakefile:
             cmakefile.write(dep_text)
 
+        zmqcmake = os.path.join(self.source_folder, "xeus-zmq", "libzmq", "CMakeLists.txt")
+        tools.replace_in_file(zmqcmake, "ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}", "ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/$<CONFIG>")
+        tools.replace_in_file(zmqcmake, "LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}", "LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/$<CONFIG>")
+        tools.replace_in_file(zmqcmake, "RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}", "RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/$<CONFIG>")
+
         os.chdir("..")
 
     def _get_tc(self):
@@ -235,21 +240,21 @@ include_directories(
         print(f"Self copy status (FileCopier) {self.copy._src_folders} {self.copy._dst_folder}") 
         copytree(Path(self.copy._src_folders[0], "xeus-zmq/include/xeus-zmq"), Path(self.copy._dst_folder, 'include/xeus'), ignore=ignore_patterns('*.cpp'))
 
-        print("packaging zmq Debug")
-        self._pkg_bin(f"{self.build_folder}/libzmq/lib/Debug", self.package_folder, "Debug", "libzmq")
-        print("packaging zmq Release")
-        self._pkg_bin(f"{self.build_folder}/libzmq/lib/Release", self.package_folder, "Release", "libzmq")
-        if self.settings.os == "Windows":
-            print("packaging zmq Debug")
-            self._pkg_bin(f"{self.build_folder}/libzmq/bin/Debug", self.package_folder, "Debug", "libzmq")
-            print("packaging zmq Release")
-            self._pkg_bin(f"{self.build_folder}/libzmq/bin/Release", self.package_folder, "Release", "libzmq")
-        # Cleanup unclassified libzmq artifacts
-        files.rm(self, "libzmq*", Path(self.package_folder, 'lib') )
+        # print("packaging zmq Debug")
+        # self._pkg_bin(f"{self.build_folder}/libzmq/lib/Debug", self.package_folder, "Debug", "libzmq")
+        # print("packaging zmq Release")
+        # self._pkg_bin(f"{self.build_folder}/libzmq/lib/Release", self.package_folder, "Release", "libzmq")
+        # if self.settings.os == "Windows":
+        #     print("packaging zmq Debug")
+        #     self._pkg_bin(f"{self.build_folder}/libzmq/bin/Debug", self.package_folder, "Debug", "libzmq")
+        #     print("packaging zmq Release")
+        #     self._pkg_bin(f"{self.build_folder}/libzmq/bin/Release", self.package_folder, "Release", "libzmq")
+        # # Cleanup unclassified libzmq artifacts
+        # files.rm(self, "libzmq*", Path(self.package_folder, 'lib') )
 
-        # Move zmq CMake
-        copytree(Path(self.package_folder, "CMake"), Path(self.package_folder, "lib", "cmake", "libzmq"))
-        rmtree(Path(self.package_folder, "CMake"))
+        # # Move zmq CMake
+        # copytree(Path(self.package_folder, "CMake"), Path(self.package_folder, "lib", "cmake", "libzmq"))
+        # rmtree(Path(self.package_folder, "CMake"))
 
 
 

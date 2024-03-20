@@ -35,10 +35,9 @@ class XeusZmqConan(ConanFile):
     exports = "cmake/*"
     exports_sources = "Findlibsodium.cmake", "Findzeromq.cmake"
     requires = (
-        "nlohmann_json/3.11.3", # header only
-    #    "cppzmq/4.10.0", # header only but depends on binary dep zeromq
-    #    "zeromq/4.3.5@lkeb/stable", # The biovault multi-config conan-zeromq with cmake config 
-        "xeus/3.1.4@lkeb/stable" # The biovault multi-config xeus with cmake config 
+        # The biovault multi-config xeus with cmake config 
+        # Xeus has upstream dependencies; nlohmann_json, xtl
+        "xeus/3.1.4@lkeb/stable" 
     )
    
     def init(self):
@@ -85,6 +84,8 @@ add_subdirectory(cppzmq)
         # Match the versions in the CMake with our versions (there are no major changes)
         tools.replace_in_file(xeuszmqcmake, "set(xeus_REQUIRED_VERSION 3.1.1)", "set(xeus_REQUIRED_VERSION 3.1.4)")
         tools.replace_in_file(xeuszmqcmake, "set(zeromq_REQUIRED_VERSION 4.3.2)", "set(zeromq_REQUIRED_VERSION 4.3.5)")
+        tools.replace_in_file(xeuszmqcmake, "set(nlohmann_json_REQUIRED_VERSION 3.2.0)", "set(zeromq_REQUIRED_VERSION 3.11.3)")
+        # add the subdirs containing cppzmg, zmq, and nlohmanjson
         tools.replace_in_file(xeuszmqcmake, "set(zeromq_REQUIRED_VERSION 4.3.5)", f"set(zeromq_REQUIRED_VERSION 4.3.5)\n{subdirs}")
         # Separate binary targets by CONFIG subdir
         tools.replace_in_file(xeuszmqcmake, "ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}", "ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/$<CONFIG>")
@@ -92,7 +93,10 @@ add_subdirectory(cppzmq)
         tools.replace_in_file(xeuszmqcmake, "RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}", "RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/$<CONFIG>")
         # Link zeromq using libzmq as in out dependency 
         tools.replace_in_file(xeuszmqcmake, "PUBLIC ${CPPZMQ_TARGET_NAME}", "PUBLIC libzmq\n        PUBLIC ${CPPZMQ_TARGET_NAME}")
+        # Package the nlohmann_json in the xeus-zmq package (for ease of use with DevBundle which is non-conan) 
         dep_text = """
+install(DIRECTORY ${nlohmann_json_INCLUDE_DIRS_RELEASE}/nlohmann DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
 add_dependencies(xeus-zmq-static xeus-zmq cppzmq libzmq)
 """
         with open(xeuszmqcmake, "a") as cmakefile:
@@ -168,13 +172,14 @@ add_dependencies(xeus-zmq-static xeus-zmq cppzmq libzmq)
 
         #     {Path(self.deps_cpp_info['cppzmq'].rootpath, 'include').as_posix()}
         #     {Path(self.deps_cpp_info['zeromq'].rootpath, 'include').as_posix()}
+        #     {Path(self.deps_cpp_info['nlohmann_json'].rootpath, 'include').as_posix()}
         with open("conan_toolchain.cmake", "a") as toolchain:
             toolchain.write(
                 fr"""
 include_directories(
-    {Path(self.deps_cpp_info['nlohmann_json'].rootpath, 'include').as_posix()}
     {Path(self.deps_cpp_info['xeus'].rootpath, 'include').as_posix()}
     {Path(self.deps_cpp_info['xtl'].rootpath, 'include').as_posix()}
+    {Path(self.deps_cpp_info['nlohmann_json'].rootpath, 'include').as_posix()}
 )
             """
             )
